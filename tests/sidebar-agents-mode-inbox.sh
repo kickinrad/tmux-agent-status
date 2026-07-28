@@ -85,8 +85,14 @@ fi
 printf 'agents' > "$STATUS_DIR/.sidebar-mode"
 agents_cache="$(run_collector)"
 
-if printf '%s\n' "$agents_cache" | grep -Fq "E:G|INBOX|green"; then
-    echo "Assertion failed: agents mode should suppress the inbox section" >&2
+if ! printf '%s\n' "$agents_cache" | grep -Fq "E:G|INBOX|green"; then
+    echo "Assertion failed: agents mode should preserve the inbox section" >&2
+    printf '%s\n' "$agents_cache" >&2
+    exit 1
+fi
+
+if ! printf '%s\n' "$agents_cache" | grep -Fq "R:I|agent-task||agent-task|done"; then
+    echo "Assertion failed: agents mode inbox should include the done agent session" >&2
     printf '%s\n' "$agents_cache" >&2
     exit 1
 fi

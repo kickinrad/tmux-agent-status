@@ -315,6 +315,7 @@ set -g @agent-park-key "p"
 set -g @agent-switcher-style "both"        # popup | sidebar | both
 set -g @agent-status-display-method "popup" # popup | window
 set -g @agent-sidebar-width "42"
+set -g @agent-sidebar-scope "global"       # global | current
 
 # Switcher view (prefix + S). "tree" is the hierarchical
 # session/window/pane list (default). "agents" is a flat list of every
@@ -324,9 +325,15 @@ set -g @agent-switcher-default-mode "tree"  # tree | agents
 
 `@agent-switcher-style "both"` is the default. It keeps the persistent sidebar and leaves `prefix + S` as the lightweight popup switcher.
 
+`@agent-sidebar-scope "current"` restricts each persistent sidebar to agent
+panes and inbox items in its own tmux session. The shared status line and popup
+switcher remain global. Set the option on one session with
+`tmux set-option -t <session> @agent-sidebar-scope current`, or globally when
+every tmux session should use the focused view.
+
 The switcher popup has two views. **Tree** (default) is the hierarchical session/window/pane list; tab expands/collapses. **Agents** is a flat list of every agent pane (any status) sorted by priority — `ask`, `done`, `working`, `wait`, `parked` — with a live preview pane and 2-second refresh. Press `ctrl-f` inside the popup to toggle between views.
 
-The sidebar has the same two views, toggled with `m` from inside the sidebar pane (alongside `w`/`p`/`x` for wait/park/close). In **tree** mode the SESSIONS section lists every session and collapses single-agent sessions to one row; the INBOX section surfaces `done`/`ask` work. In **agents** mode the SESSIONS section is filtered to sessions/worktrees that contain agent panes and every agent pane is expanded; INBOX is suppressed because it would duplicate the same rows.
+The sidebar has the same two views, toggled with `m` from inside the sidebar pane (alongside `w`/`p`/`x` for wait/park/close). In **tree** mode the SESSIONS section lists every session and collapses single-agent sessions to one row; the INBOX section surfaces `done`/`ask` work. In **agents** mode the SESSIONS and INBOX sections are filtered to sessions/worktrees that contain agent panes, and every agent pane is expanded.
 
 ## Notification Sounds
 

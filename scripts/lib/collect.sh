@@ -473,10 +473,19 @@ collect_data() {
     }
 
     # ── INBOX ────────────────────────────────────────────────────
-    if [[ "$SIDEBAR_MODE" != "agents" ]]; then
-        local inbox=()
-        for sname in "${all_sessions[@]}"; do
+    # Keep attention-ready work visible in both modes. Agents mode narrows the
+    # inbox to sessions that actually contain an agent pane (directly or in a
+    # recognized worktree child), matching the filtered SESSIONS section below.
+    local inbox=()
+    for sname in "${all_sessions[@]}"; do
             session_is_fully_parked "$sname" && continue
+            if [[ "$SIDEBAR_MODE" == "agents" ]] && [[ -z "${sess_agents[$sname]:-}" ]]; then
+                local _has_child_agent=0
+                for _wt in ${worktree_children[$sname]:-}; do
+                    [[ -n "${sess_agents[$_wt]:-}" ]] && { _has_child_agent=1; break; }
+                done
+                (( _has_child_agent )) || continue
+            fi
             if [[ -n "${sess_agents[$sname]:-}" ]]; then
                 _get_agent_arr "$sname"
                 local arr=("${_agent_result[@]}")
@@ -543,24 +552,23 @@ collect_data() {
             [[ -n "${worktree_parent[$sname]:-}" ]] && continue
             local st="${eff_state[$sname]}"
             [[ "$st" == "done" || "$st" == "ask" ]] && inbox+=("I|${sname}||${sname}|done")
-        done
+    done
 
-        if (( ${#inbox[@]} > 0 )); then
-            ENTRIES+=("G|INBOX|green")
-            for entry in "${inbox[@]}"; do
-                ENTRIES+=("$entry")
-                local r="${entry#I|}"
-                local sname="${r%%|*}"; r="${r#*|}"
-                local token="${r%%|*}"
-                if [[ -n "$token" ]]; then
-                    SEL_NAMES+=("${sname}:${token}")
-                    SEL_TYPES+=("P")
-                else
-                    SEL_NAMES+=("$sname")
-                    SEL_TYPES+=("S")
-                fi
-            done
-        fi
+    if (( ${#inbox[@]} > 0 )); then
+        ENTRIES+=("G|INBOX|green")
+        for entry in "${inbox[@]}"; do
+            ENTRIES+=("$entry")
+            local r="${entry#I|}"
+            local sname="${r%%|*}"; r="${r#*|}"
+            local token="${r%%|*}"
+            if [[ -n "$token" ]]; then
+                SEL_NAMES+=("${sname}:${token}")
+                SEL_TYPES+=("P")
+            else
+                SEL_NAMES+=("$sname")
+                SEL_TYPES+=("S")
+            fi
+        done
     fi
 
     # ── SESSIONS ─────────────────────────────────────────────────

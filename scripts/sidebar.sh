@@ -197,8 +197,17 @@ _fuzzy_match() {
 # ─── Data collection (reads cache from sidebar-collector.sh) ─────
 _collect_cur_client() {
     local info
-    info=$(tmux display-message -p $'#{client_session}\t#{pane_id}\t#{window_index}' 2>/dev/null || true)
-    IFS=$'\t' read -r CUR_SESSION CUR_PANE CUR_WINDOW_INDEX <<< "$info"
+    info=$(tmux display-message -p '#{client_session}|#{pane_id}|#{window_index}' 2>/dev/null || true)
+    IFS='|' read -r CUR_SESSION CUR_PANE CUR_WINDOW_INDEX <<< "$info"
+
+    # A restored or background workroom may have no attached client yet.
+    # Resolve identity from the sidebar's own pane so scoped rendering remains
+    # stable before the first client attaches.
+    if [[ -z "$CUR_SESSION" && -n "${TMUX_PANE:-}" ]]; then
+        info=$(tmux display-message -p -t "$TMUX_PANE" \
+            '#{session_name}|#{pane_id}|#{window_index}' 2>/dev/null || true)
+        IFS='|' read -r CUR_SESSION CUR_PANE CUR_WINDOW_INDEX <<< "$info"
+    fi
 }
 
 _sync_selected_to_current_client() {
@@ -215,6 +224,19 @@ _sync_selected_to_current_client() {
 }
 
 collect() {
+    _collect_cur_client
+
+    # Scope may be set per workroom session, with a global fallback.
+    # "current" keeps this sidebar focused on its own tmux session while the
+    # shared collector and status line continue to observe the full server.
+    local sidebar_scope
+    sidebar_scope=$(tmux show-option -qv -t "$CUR_SESSION" "@agent-sidebar-scope" 2>/dev/null || true)
+    [ -z "$sidebar_scope" ] && sidebar_scope=$(tmux show-option -gqv "@agent-sidebar-scope" 2>/dev/null || true)
+    case "$sidebar_scope" in
+        current|global) ;;
+        *) sidebar_scope="global" ;;
+    esac
+
     # Read from the shared cache written by sidebar-collector.sh.
     # Only re-parse when the cache file has been updated.
     local cache_file="$STATUS_DIR/.sidebar-cache"
@@ -225,7 +247,6 @@ collect() {
         cache_mtime=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
     fi
     if [[ "$cache_mtime" == "$_LAST_STATUS_MTIME" ]]; then
-        _collect_cur_client
         return
     fi
     _LAST_STATUS_MTIME="$cache_mtime"
@@ -237,14 +258,17 @@ collect() {
     SESS_START=0
 
     if [ ! -f "$cache_file" ]; then
-        _collect_cur_client
         return
     fi
 
+    local scoped_sess_start=0
+    local scoped_has_sessions=0
     while IFS= read -r line; do
         case "${line%%:*}" in
             TS) ;;
-            SESS_START) SESS_START="${line#SESS_START:}" ;;
+            SESS_START)
+                [[ "$sidebar_scope" == "global" ]] && SESS_START="${line#SESS_START:}"
+                ;;
             PC)
                 local rest="${line#PC:}"
                 local pcname="${rest%%:*}"
@@ -258,6 +282,20 @@ collect() {
                 rdata="${rdata%	*}"
                 local sel_name="${rdata##*	}"
                 rdata="${rdata%	*}"
+
+                if [[ "$sidebar_scope" == "current" ]]; then
+                    local row_session="$sel_name"
+                    [[ "$sel_type" == "P" ]] && row_session="${sel_name%%:*}"
+                    [[ "$row_session" == "$CUR_SESSION" ]] || continue
+                fi
+
+                local entry_type="${rdata%%|*}"
+                if [[ "$sidebar_scope" == "current" ]] && [[ "$entry_type" == "S" || "$entry_type" == "W" ]] \
+                    && (( ! scoped_has_sessions )); then
+                    scoped_sess_start=${#SEL_NAMES[@]}
+                    scoped_has_sessions=1
+                fi
+
                 ENTRIES+=("$rdata")
                 SEL_NAMES+=("$sel_name")
                 SEL_TYPES+=("$sel_type")
@@ -265,12 +303,21 @@ collect() {
         esac
     done < "$cache_file"
 
-    SEL_COUNT=${#SEL_NAMES[@]}
-    (( SEL_COUNT == 0 )) && SELECTED=0
-    (( SELECTED >= SEL_COUNT )) && SELECTED=$((SEL_COUNT - 1))
-    (( SELECTED < SESS_START )) && SELECTED=$SESS_START
+    if [[ "$sidebar_scope" == "current" ]]; then
+        if (( scoped_has_sessions )); then
+            SESS_START=$scoped_sess_start
+        else
+            SESS_START=${#SEL_NAMES[@]}
+        fi
+    fi
 
-    _collect_cur_client
+    SEL_COUNT=${#SEL_NAMES[@]}
+    if (( SEL_COUNT == 0 )); then
+        SELECTED=0
+    else
+        (( SELECTED >= SEL_COUNT )) && SELECTED=$((SEL_COUNT - 1))
+        (( SESS_START < SEL_COUNT && SELECTED < SESS_START )) && SELECTED=$SESS_START
+    fi
 }
 
 
