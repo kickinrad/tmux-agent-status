@@ -32,7 +32,6 @@ get_tmux_session() {
                     keen-schrodinger) tmux_session="sd1" ;;
                     sam-l4-workstation-image) tmux_session="l4-workstation" ;;
                     persistent-faraday) tmux_session="tig" ;;
-                    instance-20250620-122051) tmux_session="reachgpu" ;;
                     *) tmux_session=$(hostname -s 2>/dev/null) ;;
                 esac
             elif [ -n "${TMUX:-}" ]; then
@@ -108,6 +107,12 @@ mark_refresh() {
     touch "$REFRESH_FILE" 2>/dev/null || true
 }
 
+record_workroom_session() {
+    [ -n "${WORKROOM_ID:-}" ] || return 0
+    command -v workroom >/dev/null 2>&1 || return 0
+    printf '%s' "$HOOK_JSON" | workroom record-session claude >/dev/null 2>&1 || true
+}
+
 # Returns 0 if the Claude Code Stop payload reports a background task that is
 # still running (e.g. a `run_in_background` Bash command). When the agent ends
 # its turn while a background task keeps working, it isn't really idle, so we
@@ -145,6 +150,13 @@ WAIT_FILE="$WAIT_DIR/${TMUX_SESSION}.wait"
 PARKED_FILE="$PARKED_DIR/${TMUX_SESSION}.parked"
 
 case "$HOOK_TYPE" in
+    SessionStart)
+        record_workroom_session
+        if [ ! -f "$WAIT_FILE" ] && [ ! -f "$PARKED_FILE" ]; then
+            set_status "$TMUX_SESSION" "done"
+            mark_refresh
+        fi
+        ;;
     UserPromptSubmit)
         # User submitted a prompt — this is an explicit interaction, so
         # cancel wait mode and unpark.

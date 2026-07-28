@@ -2,8 +2,8 @@
 
 # Codex hook for tmux-agent-status.
 # Hook events are passed as the first argument by the configured Codex command
-# hook. The JSON payload is read from stdin and ignored here because
-# tmux-agent-status only needs the event name to update session state.
+# hook. The JSON payload also carries the exact Codex session id used by the
+# optional workroom continuity layer.
 
 STATUS_DIR="$HOME/.cache/tmux-agent-status"
 WAIT_DIR="$STATUS_DIR/wait"
@@ -13,8 +13,7 @@ REFRESH_FILE="$STATUS_DIR/.sidebar-refresh"
 mkdir -p "$STATUS_DIR" "$WAIT_DIR" "$PARKED_DIR" "$PANE_DIR"
 [ -f "$REFRESH_FILE" ] || : > "$REFRESH_FILE"
 
-# Drain the JSON payload from stdin so Codex can close the hook cleanly.
-cat >/dev/null 2>&1 || true
+HOOK_JSON="$(cat 2>/dev/null || true)"
 
 in_remote_session() {
     [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]
@@ -33,7 +32,6 @@ get_tmux_session() {
                     keen-schrodinger) tmux_session="sd1" ;;
                     sam-l4-workstation-image) tmux_session="l4-workstation" ;;
                     persistent-faraday) tmux_session="tig" ;;
-                    instance-20250620-122051) tmux_session="reachgpu" ;;
                     *) tmux_session=$(hostname -s 2>/dev/null) ;;
                 esac
             elif [ -n "${TMUX:-}" ]; then
@@ -109,6 +107,12 @@ mark_refresh() {
     touch "$REFRESH_FILE" 2>/dev/null || true
 }
 
+record_workroom_session() {
+    [ -n "${WORKROOM_ID:-}" ] || return 0
+    command -v workroom >/dev/null 2>&1 || return 0
+    printf '%s' "$HOOK_JSON" | workroom record-session codex >/dev/null 2>&1 || true
+}
+
 TMUX_SESSION=$(get_tmux_session) || exit 0
 HOOK_TYPE="${1:-}"
 WAIT_FILE="$WAIT_DIR/${TMUX_SESSION}.wait"
@@ -116,6 +120,7 @@ PARKED_FILE="$PARKED_DIR/${TMUX_SESSION}.parked"
 
 case "$HOOK_TYPE" in
     SessionStart)
+        record_workroom_session
         if [ ! -f "$WAIT_FILE" ] && [ ! -f "$PARKED_FILE" ]; then
             set_status "$TMUX_SESSION" "done"
             mark_refresh
