@@ -49,7 +49,8 @@ If Bash is installed somewhere else, set `TMUX_AGENT_STATUS_BASH` to that path.
 
 By default the plugin:
 
-- Appends the live summary to `status-right`
+- Appends the live summary to `status-right` through a tmux user option; status
+  redraws do not spawn a shell process or change `status-interval`
 - Starts the sidebar collector daemon
 - Auto-creates a sidebar in existing and new tmux sessions
 - Binds the popup switcher, wait, park, and next-ready actions

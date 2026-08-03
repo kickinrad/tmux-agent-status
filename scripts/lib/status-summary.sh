@@ -57,4 +57,8 @@ write_status_summary_cache() {
     mv -f "${STATUS_LINE_COUNTS_FILE}.tmp" "$STATUS_LINE_COUNTS_FILE"
     printf '%s\n' "$summary" > "${STATUS_LINE_CACHE_FILE}.tmp"
     mv -f "${STATUS_LINE_CACHE_FILE}.tmp" "$STATUS_LINE_CACHE_FILE"
+
+    # Publish through tmux's format store so status redraws remain shell-free.
+    # The cache stays available for standalone callers and compatibility.
+    tmux set-option -g @agent-status-summary "$summary" 2>/dev/null || true
 }

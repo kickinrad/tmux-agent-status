@@ -87,27 +87,22 @@ publish_status_summary() {
     fi
 }
 
-tick=0
 while true; do
     tmux list-sessions >/dev/null 2>&1 || exit 0
 
-    if (( tick == 0 )); then
-        collect_data
-        if (( _COLLECT_CHANGED )); then
-            serialize_cache
-            publish_status_summary
-            (( ! RUN_ONCE )) && signal_sidebar_clients USR1 all
-        fi
+    collect_data
+    if (( _COLLECT_CHANGED )); then
+        serialize_cache
+        publish_status_summary
+        (( ! RUN_ONCE )) && signal_sidebar_clients USR1 all
     fi
 
     if (( RUN_ONCE )); then
         exit 0
     fi
 
-    if (( SUMMARY_HAS_WORKING )); then
-        signal_sidebar_clients USR2 active
-    fi
-
-    sleep 0.25
-    tick=$(( (tick + 1) % 4 ))
+    # Focus and state hooks wake sidebars directly. A one-second fallback keeps
+    # wait timers and out-of-band status-file changes current without scanning
+    # every pane four times per second for cosmetic animation.
+    sleep 1
 done

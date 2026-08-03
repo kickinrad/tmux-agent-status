@@ -91,13 +91,23 @@ if [ "$control_mode" = "1" ]; then
     exit 0
 fi
 
-# Set up tmux status line integration
-tmux set-option -g status-interval 1
-
-# Check if our status is already in the status-right
+# Set up tmux status line integration. The collector publishes the rendered
+# summary into a tmux user option, so redraws do not spawn a shell process.
 current_status_right=$(tmux show-option -gqv status-right)
-if ! echo "$current_status_right" | grep -q "status-line.sh"; then
-    tmux set-option -ag status-right " #($CURRENT_DIR/scripts/status-line.sh)"
+# Remove the legacy command substitution when upgrading an existing server.
+current_status_right=${current_status_right// \#\($CURRENT_DIR\/scripts\/status-line.sh\)/}
+tmux set-option -g status-right "$current_status_right"
+if ! echo "$current_status_right" | grep -q '#{@agent-status-summary}'; then
+    tmux set-option -ag status-right ' #{@agent-status-summary}'
+fi
+
+# Older releases forced a one-second global redraw. Restore tmux's default once
+# on upgrade, without overriding a later user-selected interval.
+if [ "$(tmux show-option -gqv @agent-status-shell-free-migrated)" != "1" ]; then
+    if [ "$(tmux show-option -gqv status-interval)" = "1" ]; then
+        tmux set-option -gu status-interval
+    fi
+    tmux set-option -g @agent-status-shell-free-migrated 1
 fi
 
 # Set up daemon monitor to ensure smart-monitor is always running
