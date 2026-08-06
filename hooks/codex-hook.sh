@@ -15,12 +15,33 @@ mkdir -p "$STATUS_DIR" "$WAIT_DIR" "$PARKED_DIR" "$PANE_DIR"
 
 HOOK_JSON="$(cat 2>/dev/null || true)"
 
+resolve_tmux_context() {
+    [ -n "${TMUX_PANE:-}" ] && return 0
+    command -v tmux >/dev/null 2>&1 || return 1
+
+    local pid="$PPID"
+    local pane_id="" pane_pid="" session_name=""
+    while [ "$pid" -gt 1 ] 2>/dev/null; do
+        while IFS=$'\t' read -r pane_id pane_pid session_name; do
+            if [ "$pane_pid" = "$pid" ]; then
+                TMUX_PANE="$pane_id"
+                TMUX_SESSION="$session_name"
+                export TMUX_PANE
+                return 0
+            fi
+        done < <(tmux list-panes -a -F '#{pane_id}\t#{pane_pid}\t#{session_name}' 2>/dev/null)
+
+        pid=$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null) || return 1
+    done
+    return 1
+}
+
 in_remote_session() {
     [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_TTY:-}" ]
 }
 
 get_tmux_session() {
-    local tmux_session=""
+    local tmux_session="${TMUX_SESSION:-}"
 
     if [ -n "${TMUX:-}" ] || in_remote_session; then
         tmux_session=$(tmux display-message -p '#{session_name}' 2>/dev/null)
@@ -108,19 +129,25 @@ mark_refresh() {
 }
 
 record_workroom_session() {
-    [ -n "${WORKROOM_ID:-}" ] || return 0
+    local workroom_id="${WORKROOM_ID:-}"
+    if [ -z "$workroom_id" ] && [ -n "${TMUX_PANE:-}" ]; then
+        workroom_id=$(tmux display-message -p -t "$TMUX_PANE" '#{@workroom-id}' 2>/dev/null || true)
+    fi
+    [ -n "$workroom_id" ] || return 0
     command -v workroom >/dev/null 2>&1 || return 0
-    printf '%s' "$HOOK_JSON" | workroom record-session codex >/dev/null 2>&1 || true
+    printf '%s' "$HOOK_JSON" |
+        WORKROOM_ID="$workroom_id" workroom record-session codex >/dev/null 2>&1 || true
 }
 
+resolve_tmux_context || true
 TMUX_SESSION=$(get_tmux_session) || exit 0
 HOOK_TYPE="${1:-}"
 WAIT_FILE="$WAIT_DIR/${TMUX_SESSION}.wait"
 PARKED_FILE="$PARKED_DIR/${TMUX_SESSION}.parked"
+record_workroom_session
 
 case "$HOOK_TYPE" in
     SessionStart)
-        record_workroom_session
         if [ ! -f "$WAIT_FILE" ] && [ ! -f "$PARKED_FILE" ]; then
             set_status "$TMUX_SESSION" "done"
             mark_refresh
